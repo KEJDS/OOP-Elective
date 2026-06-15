@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Configuration;
@@ -68,14 +68,13 @@ namespace SQPMS
             Response.Redirect("Dashboard.aspx");
         }
 
-        // LOAD ACTIVE APPROVED ORDERS (GROUPED & FILTERED)
+        // LOAD ACTIVE APPROVED ORDERS
         private void BindActiveOrdersDropdown()
         {
             try
             {
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    // Group by QuotationID to show the whole bundle in one row
                     string query = @"
             SELECT 
                 q.QuotationID,
@@ -98,7 +97,7 @@ namespace SQPMS
                             sda.Fill(dt);
                             ddlOrders.DataSource = dt;
                             ddlOrders.DataTextField = "OrderDisplay";
-                            ddlOrders.DataValueField = "QuotationID"; // Use QuotationID!
+                            ddlOrders.DataValueField = "QuotationID"; 
                             ddlOrders.DataBind();
                         }
                     }
@@ -108,7 +107,6 @@ namespace SQPMS
             catch (Exception ex) { lblMsg.Text = "Error: " + ex.Message; }
         }
 
-        // AUTO LOAD QUANTITY ONLY FOR PENDING ITEMS
         protected void ddlOrders_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(ddlOrders.SelectedValue))
@@ -147,11 +145,10 @@ namespace SQPMS
             {
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    // This query groups items by the Quotation/Client bundle
                     string query = @"
             SELECT 
-                q.QuotationID AS ProductionID, -- We use QuotationID as our primary grouping key
-                MIN(p.OrderID) AS OrderID, -- Placeholder
+                q.QuotationID AS ProductionID, 
+                MIN(p.OrderID) AS OrderID, 
                 (c.CompanyName + ' [Quote #' + CAST(q.QuotationID AS VARCHAR) + ']') AS CompanyName,
                 STUFF((SELECT ', ' + o2.Item FROM Orders o2 WHERE o2.QuotationID = q.QuotationID FOR XML PATH('')), 1, 2, '') AS Item,
                 SUM(p.Quantity) AS Quantity,
@@ -215,15 +212,15 @@ namespace SQPMS
 
                     if (!string.IsNullOrEmpty(hfEditingProductionID.Value))
                     {
+                        // FIXED: Updates all production rows tied to the bundled QuotationID
                         string updateQuery = @"
                             UPDATE Production
-                            SET Quantity = @Quantity, Status = @Status, Deadline = @Deadline
-                            WHERE ProductionID = @ProductionID";
+                            SET Status = @Status, Deadline = @Deadline
+                            WHERE OrderID IN (SELECT OrderID FROM Orders WHERE QuotationID = @QuoteID)";
 
                         using (SqlCommand cmd = new SqlCommand(updateQuery, con))
                         {
-                            cmd.Parameters.AddWithValue("@ProductionID", hfEditingProductionID.Value);
-                            cmd.Parameters.AddWithValue("@Quantity", qty);
+                            cmd.Parameters.AddWithValue("@QuoteID", hfEditingProductionID.Value);
                             cmd.Parameters.AddWithValue("@Status", ddlStatus.SelectedValue);
                             cmd.Parameters.AddWithValue("@Deadline", deadlineDate);
                             cmd.ExecuteNonQuery();
@@ -266,7 +263,7 @@ namespace SQPMS
                 }
 
                 lblMsg.ForeColor = System.Drawing.Color.Green;
-                lblMsg.Text = "Production dispatched successfully.";
+                lblMsg.Text = "Production dispatched/updated successfully.";
 
                 ResetForm();
                 BindProductionGrid();
@@ -287,6 +284,7 @@ namespace SQPMS
                 int index = Convert.ToInt32(e.CommandArgument);
                 GridViewRow row = gvProduction.Rows[index];
 
+                // DataKeys["ProductionID"] is actually the QuotationID due to our grid grouping
                 hfEditingProductionID.Value = gvProduction.DataKeys[index].Values["ProductionID"].ToString();
                 string assignedOrderID = gvProduction.DataKeys[index].Values["OrderID"].ToString();
 
@@ -305,7 +303,6 @@ namespace SQPMS
                     txtDeadline.Text = deadlineValue.ToString("yyyy-MM-dd");
                 }
 
-                // FIXED: Safety logic for editing dispatched items
                 try
                 {
                     using (SqlConnection con = new SqlConnection(connString))
@@ -328,14 +325,13 @@ namespace SQPMS
                                     string qId = sdr["QuotationID"].ToString();
                                     string compName = sdr["CompanyName"].ToString();
 
-                                    // Temporarily inject the hidden item back into the dropdown so it doesn't crash
                                     if (ddlOrders.Items.FindByValue(qId) == null)
                                     {
                                         ddlOrders.Items.Add(new ListItem($"{compName} [Quote Ref: #{qId}] (Editing Mode)", qId));
                                     }
 
                                     ddlOrders.SelectedValue = qId;
-                                    ddlOrders.Enabled = false; // Lock the dropdown so they don't break the bundle
+                                    ddlOrders.Enabled = false; 
                                 }
                             }
                         }
@@ -343,7 +339,7 @@ namespace SQPMS
                 }
                 catch { }
 
-                btnSaveProduction.Text = "Update Individual Item";
+                btnSaveProduction.Text = "Update Bundle Status";
                 btnCancelEdit.Visible = true;
             }
         }
@@ -408,14 +404,15 @@ namespace SQPMS
         {
             try
             {
-                int productionID = Convert.ToInt32(gvProduction.DataKeys[e.RowIndex].Values["ProductionID"]);
+                // FIXED: Delete all items in the bundle based on the QuotationID
+                int quoteID = Convert.ToInt32(gvProduction.DataKeys[e.RowIndex].Values["ProductionID"]);
 
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    string query = "DELETE FROM Production WHERE ProductionID = @ProductionID";
+                    string query = "DELETE FROM Production WHERE OrderID IN (SELECT OrderID FROM Orders WHERE QuotationID = @QuoteID)";
                     using (SqlCommand cmd = new SqlCommand(query, con))
                     {
-                        cmd.Parameters.AddWithValue("@ProductionID", productionID);
+                        cmd.Parameters.AddWithValue("@QuoteID", quoteID);
                         con.Open();
                         cmd.ExecuteNonQuery();
                     }
@@ -423,7 +420,7 @@ namespace SQPMS
 
                 ResetForm();
                 BindProductionGrid();
-                BindActiveOrdersDropdown(); // Re-adds it to the dropdown since it was deleted!
+                BindActiveOrdersDropdown(); 
             }
             catch (Exception ex)
             {
