@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Configuration;
@@ -131,14 +131,16 @@ namespace SQPMS
                     }
 
                     // 3 & 4. Pending Collections & Overdue Accounts
+                    // FIXED: Removed EXISTS filter, added QuotationID grouping so it matches the Collections page
                     string collectionsQuery = @"
                     WITH OrderSummary AS (
                         SELECT 
-                            o.OrderID,
-                            (CAST(o.Cost AS DECIMAL(18,2)) * CAST(o.Qty AS DECIMAL(18,2)) + ISNULL(TRY_CAST(o.Customize AS DECIMAL(18,2)), 0)) AS OrderTotal,
-                            ISNULL((SELECT SUM(Amount) FROM Payments WHERE OrderID = o.OrderID), 0) AS TotalPaid
+                            o.QuotationID,
+                            SUM((CAST(o.Cost AS DECIMAL(18,2)) * CAST(o.Qty AS DECIMAL(18,2))) + ISNULL(TRY_CAST(o.Customize AS DECIMAL(18,2)), 0)) AS OrderTotal,
+                            ISNULL((SELECT SUM(Amount) FROM Payments p INNER JOIN Orders o2 ON p.OrderID = o2.OrderID WHERE o2.QuotationID = o.QuotationID), 0) AS TotalPaid
                         FROM Orders o
-                        WHERE EXISTS (SELECT 1 FROM Payments WHERE OrderID = o.OrderID)
+                        WHERE o.Status <> 'Cancelled'
+                        GROUP BY o.QuotationID
                     )
                     SELECT 
                         ISNULL(SUM(OrderTotal - TotalPaid), 0) AS TotalPendingBalance,
@@ -160,7 +162,7 @@ namespace SQPMS
                         }
                     }
 
-                    // 5. In Production (FIXED: Counts unique bundle Quotations, not single items)
+                    // 5. In Production
                     string productionQuery = @"
                     SELECT COUNT(DISTINCT o.QuotationID) 
                     FROM Production p
@@ -309,7 +311,6 @@ namespace SQPMS
             {
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    // FIXED: Grouped Production activity by QuotationID so it only outputs one line per bundle!
                     string activityQuery = @"
                         SELECT TOP 3 * FROM (
                             SELECT 'Q-' + CAST(q.QuotationID AS VARCHAR) + ' approved by ' + c.CompanyName AS Details, 'blue' AS DotColor, q.DateCreated AS ActionDate, 'Recently' AS TimeAgo
