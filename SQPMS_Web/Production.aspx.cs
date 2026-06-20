@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data;
 using System.Data.SqlClient;
 using System.Configuration;
@@ -69,6 +69,7 @@ namespace SQPMS
         }
 
         // LOAD ACTIVE APPROVED ORDERS
+        // LOAD ACTIVE APPROVED ORDERS
         private void BindActiveOrdersDropdown()
         {
             try
@@ -95,13 +96,20 @@ namespace SQPMS
                         {
                             DataTable dt = new DataTable();
                             sda.Fill(dt);
+
+                            // ADD THIS LINE HERE:
+                            ddlOrders.ClearSelection();
+
                             ddlOrders.DataSource = dt;
                             ddlOrders.DataTextField = "OrderDisplay";
-                            ddlOrders.DataValueField = "QuotationID"; 
+                            ddlOrders.DataValueField = "QuotationID";
                             ddlOrders.DataBind();
                         }
                     }
                 }
+
+                // Safely clear again before inserting the default item
+                ddlOrders.ClearSelection();
                 ddlOrders.Items.Insert(0, new ListItem("-- Select an Accepted Order Bundle --", ""));
             }
             catch (Exception ex) { lblMsg.Text = "Error: " + ex.Message; }
@@ -265,9 +273,10 @@ namespace SQPMS
                 lblMsg.ForeColor = System.Drawing.Color.Green;
                 lblMsg.Text = "Production dispatched/updated successfully.";
 
-                ResetForm();
+                // CHANGED THE ORDER HERE:
                 BindProductionGrid();
                 BindActiveOrdersDropdown();
+                ResetForm();
             }
             catch (Exception ex)
             {
@@ -331,7 +340,7 @@ namespace SQPMS
                                     }
 
                                     ddlOrders.SelectedValue = qId;
-                                    ddlOrders.Enabled = false; 
+                                    ddlOrders.Enabled = false;
                                 }
                             }
                         }
@@ -418,9 +427,10 @@ namespace SQPMS
                     }
                 }
 
-                ResetForm();
+                // CHANGED THE ORDER HERE:
                 BindProductionGrid();
-                BindActiveOrdersDropdown(); 
+                BindActiveOrdersDropdown();
+                ResetForm();
             }
             catch (Exception ex)
             {
@@ -435,14 +445,28 @@ namespace SQPMS
         }
 
         // RESET FORM
+        // RESET FORM
         private void ResetForm()
         {
             hfEditingProductionID.Value = "";
             txtQuantity.Text = "";
             txtDeadline.Text = "";
             ddlOrders.Enabled = true;
-            ddlOrders.SelectedIndex = 0;
-            ddlStatus.SelectedIndex = 0;
+
+            // FIXED: Safely clear the selection instead of forcing an index that might not exist
+            ddlOrders.ClearSelection();
+            if (ddlOrders.Items.Count > 0)
+            {
+                ddlOrders.SelectedIndex = 0;
+            }
+
+            // Safely reset the Status dropdown as well
+            ddlStatus.ClearSelection();
+            if (ddlStatus.Items.Count > 0)
+            {
+                ddlStatus.SelectedIndex = 0;
+            }
+
             btnSaveProduction.Text = "✔ Dispatch Bundle to Queue";
             btnCancelEdit.Visible = false;
         }

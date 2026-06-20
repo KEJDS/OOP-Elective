@@ -154,7 +154,7 @@
                     <div class="form-group">
                         <label>Assign Security Role:</label>
                         <asp:DropDownList ID="ddlRole" runat="server" CssClass="form-control">
-                            <asp:ListItem Text="Owner" Value="owner"></asp:ListItem>
+                            <asp:ListItem Text="Admin" Value="owner"></asp:ListItem>
                             <asp:ListItem Text="Sales" Value="sales"></asp:ListItem>
                             <asp:ListItem Text="Operation" Value="operation"></asp:ListItem>
                         </asp:DropDownList>

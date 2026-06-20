@@ -93,26 +93,29 @@ namespace SQPMS
             {
                 GetDateParameters(out DateTime? start, out DateTime? end);
 
-                // FIXED: We now filter by the date the Quotation/Order was created, NOT the payment date.
                 string orderDateFilter = start.HasValue ? " AND q.DateCreated >= @Start AND q.DateCreated <= @End " : "";
 
                 using (SqlConnection con = new SqlConnection(connString))
                 {
                     con.Open();
 
-                    // GENERATE SUMMARY ITEMIZED HISTORY LINE MATRIX (Accrual Basis)
+                    // FIXED: Now groups the Financial Matrix by QuotationID (The Bundle)
                     string ledgerGridSql = @"
                     WITH OrderData AS (
                         SELECT 
-                            o.OrderID, c.CompanyName, o.Item, o.Qty, 
-                            ((CAST(o.Cost AS DECIMAL(18,2)) * CAST(o.Qty AS DECIMAL(18,2))) + ISNULL(CAST(NULLIF(RTRIM(LTRIM(o.Customize)), '') AS DECIMAL(18,2)), 0)) AS GrossSales,
-                            ISNULL((CAST(o.Qty AS DECIMAL(18,2)) * pr.MaterialCost), 0) AS TotalMaterialCost,
-                            ISNULL((SELECT SUM(Amount) FROM Payments p2 WHERE p2.OrderID = o.OrderID), 0) AS TotalPaid
+                            o.QuotationID AS OrderID, 
+                            c.CompanyName, 
+                            STUFF((SELECT ', ' + o2.Item FROM Orders o2 WHERE o2.QuotationID = o.QuotationID FOR XML PATH('')), 1, 2, '') AS Item,
+                            SUM(o.Qty) AS Qty, 
+                            SUM((CAST(o.Cost AS DECIMAL(18,2)) * CAST(o.Qty AS DECIMAL(18,2))) + ISNULL(CAST(NULLIF(RTRIM(LTRIM(o.Customize)), '') AS DECIMAL(18,2)), 0)) AS GrossSales,
+                            SUM(ISNULL((CAST(o.Qty AS DECIMAL(18,2)) * pr.MaterialCost), 0)) AS TotalMaterialCost,
+                            ISNULL((SELECT SUM(Amount) FROM Payments p2 INNER JOIN Orders o3 ON p2.OrderID = o3.OrderID WHERE o3.QuotationID = o.QuotationID), 0) AS TotalPaid
                         FROM Orders o
                         INNER JOIN Clients c ON o.ClientID = c.ClientID
                         INNER JOIN Quotations q ON o.QuotationID = q.QuotationID
                         LEFT JOIN (SELECT ProductName, MAX(MaterialCost) AS MaterialCost FROM Products GROUP BY ProductName) pr ON o.Item = pr.ProductName
                         WHERE o.Status <> 'Cancelled' " + orderDateFilter + @"
+                        GROUP BY o.QuotationID, c.CompanyName
                     )
                     SELECT 
                         OrderID, CompanyName, Item, Qty, GrossSales, TotalMaterialCost, 
@@ -128,7 +131,6 @@ namespace SQPMS
                         if (start.HasValue)
                         {
                             cmd.Parameters.AddWithValue("@Start", start.Value);
-                            // Set end date to 23:59:59 to capture orders made on the exact final day
                             cmd.Parameters.AddWithValue("@End", end.Value.AddHours(23).AddMinutes(59).AddSeconds(59));
                         }
 
@@ -145,7 +147,6 @@ namespace SQPMS
                     }
 
                     // CALCULATE ALL 5 METRICS DYNAMICALLY FROM THE DATATABLE 
-                    // This ensures the top cards perfectly match the grid at all times!
                     decimal totalGrossSales = 0;
                     decimal totalMaterialCosts = 0;
                     decimal totalCollected = 0;
@@ -206,7 +207,7 @@ namespace SQPMS
                     sb.AppendLine("td { padding: 8px; border: 1px solid #dddddd; }");
                     sb.AppendLine(".title { font-size: 18px; font-weight: bold; color: #0b3556; margin-bottom: 10px; }");
                     sb.AppendLine(".summary-lbl { font-weight: bold; background-color: #fdf3e7; width: 200px; }");
-                    sb.AppendLine(".money { mso-number-format:'\\#\\,\\#\\#0\\.00'; }"); // Tells Excel to treat as formatted numbers
+                    sb.AppendLine(".money { mso-number-format:'\\#\\,\\#\\#0\\.00'; }");
                     sb.AppendLine("</style></head><body>");
 
                     // --- SECTION 1: FINANCIAL SUMMARY ---
@@ -230,20 +231,25 @@ namespace SQPMS
                     // --- SECTION 2: ITEMIZED FINANCIAL MATRIX ---
                     sb.AppendLine("<div class='title'>ITEMIZED FINANCIAL MATRIX</div>");
                     sb.AppendLine("<table>");
-                    sb.AppendLine("<tr><th>Order ID</th><th>Client Name</th><th>Item</th><th>Qty</th><th>Gross Sales</th><th>Material Cost</th><th>Net Profit</th><th>Amount Collected</th><th>Pending / Loss</th></tr>");
+                    sb.AppendLine("<tr><th>Order Ref (Bundle)</th><th>Client Name</th><th>Items</th><th>Total Qty</th><th>Gross Sales</th><th>Material Cost</th><th>Net Profit</th><th>Amount Collected</th><th>Pending / Loss</th></tr>");
 
+                    // FIXED: Same query here to ensure the Excel sheet correctly groups the bundle
                     string ledgerGridSql = @"
                     WITH OrderData AS (
                         SELECT 
-                            o.OrderID, c.CompanyName, o.Item, o.Qty, 
-                            ((CAST(o.Cost AS DECIMAL(18,2)) * CAST(o.Qty AS DECIMAL(18,2))) + ISNULL(CAST(NULLIF(RTRIM(LTRIM(o.Customize)), '') AS DECIMAL(18,2)), 0)) AS GrossSales,
-                            ISNULL((CAST(o.Qty AS DECIMAL(18,2)) * pr.MaterialCost), 0) AS TotalMaterialCost,
-                            ISNULL((SELECT SUM(Amount) FROM Payments p2 WHERE p2.OrderID = o.OrderID), 0) AS TotalPaid
+                            o.QuotationID AS OrderID, 
+                            c.CompanyName, 
+                            STUFF((SELECT ', ' + o2.Item FROM Orders o2 WHERE o2.QuotationID = o.QuotationID FOR XML PATH('')), 1, 2, '') AS Item,
+                            SUM(o.Qty) AS Qty, 
+                            SUM((CAST(o.Cost AS DECIMAL(18,2)) * CAST(o.Qty AS DECIMAL(18,2))) + ISNULL(CAST(NULLIF(RTRIM(LTRIM(o.Customize)), '') AS DECIMAL(18,2)), 0)) AS GrossSales,
+                            SUM(ISNULL((CAST(o.Qty AS DECIMAL(18,2)) * pr.MaterialCost), 0)) AS TotalMaterialCost,
+                            ISNULL((SELECT SUM(Amount) FROM Payments p2 INNER JOIN Orders o3 ON p2.OrderID = o3.OrderID WHERE o3.QuotationID = o.QuotationID), 0) AS TotalPaid
                         FROM Orders o
                         INNER JOIN Clients c ON o.ClientID = c.ClientID
                         INNER JOIN Quotations q ON o.QuotationID = q.QuotationID
                         LEFT JOIN (SELECT ProductName, MAX(MaterialCost) AS MaterialCost FROM Products GROUP BY ProductName) pr ON o.Item = pr.ProductName
                         WHERE o.Status <> 'Cancelled' " + orderDateFilter + @"
+                        GROUP BY o.QuotationID, c.CompanyName
                     )
                     SELECT 
                         OrderID, CompanyName, Item, Qty, GrossSales, TotalMaterialCost, 
@@ -284,7 +290,7 @@ namespace SQPMS
                     // --- SECTION 3: RAW COLLECTION PAYMENTS ---
                     sb.AppendLine("<div class='title'>DETAILED PAYMENT COLLECTION HISTORY</div>");
                     sb.AppendLine("<table>");
-                    sb.AppendLine("<tr><th>Payment ID</th><th>Order ID</th><th>Amount Paid</th><th>Status</th><th>Due Date</th></tr>");
+                    sb.AppendLine("<tr><th>Payment ID</th><th>Order Line ID</th><th>Amount Paid</th><th>Status</th><th>Due Date</th></tr>");
 
                     string paymentsSql = @"
                         SELECT PaymentID, OrderID, Amount, Status, DueDate 
@@ -323,7 +329,6 @@ namespace SQPMS
                     // --- TRIGGER BROWSER DOWNLOAD ---
                     Response.Clear();
                     Response.Buffer = true;
-                    // Note: The extension is changed to .xls to force Excel formatting
                     Response.AddHeader("content-disposition", "attachment;filename=BasicBee_Report_" + ddlDateRange.SelectedValue + "_" + DateTime.Now.ToString("yyyyMMdd") + ".xls");
                     Response.Charset = "utf-8";
                     Response.ContentType = "application/vnd.ms-excel";
@@ -339,11 +344,10 @@ namespace SQPMS
             }
         }
 
-        // Helper Method to clean text-based labels into raw numbers for Excel
         private string CleanMoney(string input)
         {
             if (string.IsNullOrEmpty(input)) return "0.00";
             return input.Replace("&#8369;", "").Replace("₱", "").Replace(",", "").Trim();
         }
     }
-    }
+}

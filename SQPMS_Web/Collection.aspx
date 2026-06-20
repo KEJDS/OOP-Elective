@@ -212,7 +212,6 @@
 
             <div class="form-group mt-3">
                 <asp:Button ID="btnSavePayment" runat="server" Text="✔ Record Payment Entry" CssClass="btn btn-success" OnClick="btnSavePayment_Click" />
-                <asp:LinkButton ID="btnCancelEdit" runat="server" Text="Cancel Edit" OnClick="btnCancelEdit_Click" Visible="false" style="margin-left:15px; color:#6c757d; text-decoration:none; font-weight:bold;" />
             </div>
         </div>
     </div>
@@ -289,7 +288,6 @@
                 <asp:BoundField DataField="DueDate" HeaderText="Due Date" DataFormatString="{0:yyyy-MM-dd}" />
                 <asp:TemplateField HeaderText="Actions">
                     <ItemTemplate>
-                        <asp:LinkButton ID="btnEdit" runat="server" CommandName="SelectForEdit" CommandArgument='<%# Container.DataItemIndex %>' Text="Edit" style="text-decoration:none; font-weight:bold; margin-right:8px; color:#0d6efd;" />
                         <asp:LinkButton ID="btnDelete" runat="server" CommandName="Delete" Text="Void" OnClientClick="return confirm('Void this collection line ledger?');" style="text-decoration:none; font-weight:bold; color:#dc3545;" />
                     </ItemTemplate>
                 </asp:TemplateField>

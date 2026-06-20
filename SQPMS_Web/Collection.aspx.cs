@@ -211,24 +211,8 @@ namespace SQPMS
                 {
                     con.Open();
 
-                    // If Editing, we first clear the old micro-payments from that specific date
-                    if (!string.IsNullOrEmpty(hfEditingPaymentID.Value))
-                    {
-                        string[] editParams = hfEditingPaymentID.Value.Split('|');
-                        int editQuoteID = Convert.ToInt32(editParams[0]);
-                        DateTime oldDate = Convert.ToDateTime(editParams[1]);
-
-                        string clearOldQuery = "DELETE FROM Payments WHERE DueDate = @OldDate AND OrderID IN (SELECT OrderID FROM Orders WHERE QuotationID = @QuoteID)";
-                        using (SqlCommand cmdDel = new SqlCommand(clearOldQuery, con))
-                        {
-                            cmdDel.Parameters.AddWithValue("@OldDate", oldDate);
-                            cmdDel.Parameters.AddWithValue("@QuoteID", editQuoteID);
-                            cmdDel.ExecuteNonQuery();
-                        }
-                    }
-
-                    // Proceed with standard insertion/distribution logic
-                    int selectedQuoteID = string.IsNullOrEmpty(hfEditingPaymentID.Value) ? Convert.ToInt32(ddlOrders.SelectedValue) : Convert.ToInt32(hfEditingPaymentID.Value.Split('|')[0]);
+                    // Process standard insertion/distribution logic
+                    int selectedQuoteID = Convert.ToInt32(ddlOrders.SelectedValue);
 
                     string getItemsQuery = @"
                     SELECT o.OrderID, 
@@ -277,6 +261,7 @@ namespace SQPMS
                         }
                     }
                 }
+
                 lblMsg.ForeColor = System.Drawing.Color.Green;
                 lblMsg.Text = "Invoice payment processed successfully.";
                 ResetForm();
@@ -421,7 +406,6 @@ namespace SQPMS
             {
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    // FIXED: This CTE groups by QuotationID AND DueDate so bundled payments are merged into 1 row visually
                     string query = @"
             WITH BundleTotals AS (
                 SELECT o.QuotationID, c.CompanyName, 
@@ -452,7 +436,8 @@ namespace SQPMS
                     bp.AmountPaid AS Amount,
                     (bt.OrderTotal - SUM(bp.AmountPaid) OVER(PARTITION BY bp.QuotationID)) AS RemainingBalance,
                     CASE 
-                        WHEN (bt.OrderTotal - SUM(bp.AmountPaid) OVER(PARTITION BY bp.QuotationID)) <= 0.00 THEN 'Paid'
+                        WHEN (bt.OrderTotal - SUM(bp.AmountPaid) OVER(PARTITION BY bp.QuotationID)) < 0.00 THEN 'Overpaid'
+                        WHEN (bt.OrderTotal - SUM(bp.AmountPaid) OVER(PARTITION BY bp.QuotationID)) = 0.00 THEN 'Paid'
                         WHEN bp.SavedStatus = 'Reversal' THEN 'Reversed'
                         WHEN SUM(bp.AmountPaid) OVER(PARTITION BY bp.QuotationID) > 0 THEN 'Partially Paid'
                         ELSE 'Unpaid'
@@ -513,7 +498,6 @@ namespace SQPMS
             {
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    // FIXED: Grouped Archive Orders by Quotation Bundle
                     string query = @"
                     WITH QuoteTotals AS (
                         SELECT 
@@ -562,7 +546,6 @@ namespace SQPMS
             {
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    // FIXED: Grouped KPI tiles by Quotation Invoice
                     string query = @"
             WITH OrderSummary AS (
                 SELECT 
@@ -623,40 +606,13 @@ namespace SQPMS
 
         protected void gvPayments_RowCommand(object sender, GridViewCommandEventArgs e)
         {
-            if (e.CommandName == "SelectForEdit")
-            {
-                int index = Convert.ToInt32(e.CommandArgument);
-                GridViewRow row = gvPayments.Rows[index];
-
-                // FIXED: To edit a bundle, we need to pass both the QuoteID and the exact Date it was paid.
-                string quoteID = gvPayments.DataKeys[index].Values["OrderID"].ToString(); // OrderID holds QuotationID in this view
-                DateTime.TryParse(row.Cells[8].Text.Trim(), out DateTime dateValue);
-
-                hfEditingPaymentID.Value = quoteID + "|" + dateValue.ToString("yyyy-MM-dd");
-
-                txtAmount.Enabled = true;
-                btnSavePayment.Enabled = true;
-                lblMsg.Text = "";
-
-                txtAmount.Text = row.Cells[5].Text.Trim().Replace("$", "").Replace("\u20B1", "").Replace("₱", "").Replace("&#8369;", "").Replace(",", "");
-                txtDueDate.Text = dateValue.ToString("yyyy-MM-dd");
-                btnSavePayment.Text = "Modify Transaction Ledger";
-                btnCancelEdit.Visible = true;
-
-                try
-                {
-                    ddlOrders.SelectedValue = quoteID;
-                    ddlOrders_SelectedIndexChanged(null, null);
-                }
-                catch { }
-            }
+            // Edit functionality removed
         }
 
         protected void gvPayments_RowDeleting(object sender, GridViewDeleteEventArgs e)
         {
             try
             {
-                // FIXED: Voiding a bundled row must delete all micro-payments for that Invoice made on that specific day
                 int quoteID = Convert.ToInt32(gvPayments.DataKeys[e.RowIndex].Values["OrderID"]);
                 DateTime.TryParse(gvPayments.Rows[e.RowIndex].Cells[8].Text.Trim(), out DateTime dateValue);
 
@@ -679,16 +635,12 @@ namespace SQPMS
             catch (Exception ex) { lblMsg.Text = "Error: " + ex.Message; }
         }
 
-        protected void btnCancelEdit_Click(object sender, EventArgs e) { ResetForm(); }
-
         private void ResetForm()
         {
-            hfEditingPaymentID.Value = "";
             txtAmount.Text = "";
             txtAmount.Enabled = false;
             btnSavePayment.Text = "✔ Record Payment Entry";
             btnSavePayment.Enabled = true;
-            btnCancelEdit.Visible = false;
 
             ddlOrders.SelectedIndex = 0;
             txtOrderAmount.Text = "0.00";

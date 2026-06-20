@@ -271,15 +271,22 @@ namespace SQPMS
             {
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    string query = "SELECT ClientID, CompanyName, ContactPerson, Email, Phone, PaymentTerms, Status FROM Clients ORDER BY ClientID DESC";
+                    // Added "WHERE Status = 'Active'" so inactive clients disappear from the screen
+                    string query = "SELECT ClientID, CompanyName, ContactPerson, Email, Phone, PaymentTerms, Status FROM Clients WHERE Status = 'Active' ORDER BY ClientID DESC";
+
                     using (SqlDataAdapter sda = new SqlDataAdapter(query, con))
                     {
-                        DataTable dt = new DataTable(); sda.Fill(dt);
-                        gvClients.DataSource = dt; gvClients.DataBind();
+                        DataTable dt = new DataTable();
+                        sda.Fill(dt);
+                        gvClients.DataSource = dt;
+                        gvClients.DataBind();
                     }
                 }
             }
-            catch (Exception ex) { lblClientMsg.Text = "Error loading clients: " + ex.Message; }
+            catch (Exception ex)
+            {
+                lblClientMsg.Text = "Error loading clients: " + ex.Message;
+            }
         }
 
         protected void btnAddClient_Click(object sender, EventArgs e)
@@ -347,16 +354,30 @@ namespace SQPMS
                 int clientId = Convert.ToInt32(gvClients.DataKeys[e.RowIndex].Value);
                 using (SqlConnection con = new SqlConnection(connString))
                 {
-                    string query = "DELETE FROM Clients WHERE ClientID = @ClientID";
+                    // Replaced Hard Delete with a Soft Delete to maintain referential integrity
+                    string query = "UPDATE Clients SET Status = 'Inactive' WHERE ClientID = @ClientID";
+
                     using (SqlCommand cmd = new SqlCommand(query, con))
                     {
                         cmd.Parameters.AddWithValue("@ClientID", clientId);
-                        con.Open(); cmd.ExecuteNonQuery();
+                        con.Open();
+                        cmd.ExecuteNonQuery();
                     }
                 }
-                ResetClientForm(); BindClientGrid(); BindClientDropdown();
+
+                ResetClientForm();
+                BindClientGrid();
+                BindClientDropdown();
+
+                // Optional: Provide success feedback
+                lblClientMsg.ForeColor = System.Drawing.Color.Green;
+                lblClientMsg.Text = "Client successfully archived (Inactive).";
             }
-            catch (Exception ex) { lblClientMsg.Text = "Dependency error: " + ex.Message; }
+            catch (Exception ex)
+            {
+                lblClientMsg.ForeColor = System.Drawing.Color.Red;
+                lblClientMsg.Text = "Update error: " + ex.Message;
+            }
         }
 
         // 3. ORDER TRANSACTION SYSTEM HANDLERS

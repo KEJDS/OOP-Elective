@@ -86,7 +86,7 @@
             <label>PASSWORD</label>
             <asp:TextBox ID="txtPass" runat="server" CssClass="input-field" TextMode="Password" Placeholder="•••••••"></asp:TextBox>
             
-            <a href="#" class="forgot-link">Forgot password?</a>
+            
             
             <asp:Button ID="btnLogin" runat="server" Text="Sign In →" CssClass="login-btn" OnClick="btnLogin_Click" />
         </div>
